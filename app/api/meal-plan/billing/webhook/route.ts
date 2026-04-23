@@ -2,14 +2,27 @@ import Stripe from "stripe";
 import { headers } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
 export async function POST(request: Request) {
+  const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  if (!stripeSecretKey) {
+    return new Response("Missing STRIPE_SECRET_KEY", { status: 500 });
+  }
+
+  if (!supabaseUrl || !supabaseServiceRoleKey) {
+    return new Response("Missing Supabase admin environment variables", { status: 500 });
+  }
+
+  if (!webhookSecret) {
+    return new Response("Missing STRIPE_WEBHOOK_SECRET", { status: 500 });
+  }
+
+  const stripe = new Stripe(stripeSecretKey);
+  const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
+
   const body = await request.text();
   const signature = (await headers()).get("stripe-signature");
 
@@ -20,11 +33,7 @@ export async function POST(request: Request) {
   let event: Stripe.Event;
 
   try {
-    event = stripe.webhooks.constructEvent(
-      body,
-      signature,
-      process.env.STRIPE_WEBHOOK_SECRET!
-    );
+    event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
   } catch (err: any) {
     return new Response(`Webhook Error: ${err.message}`, { status: 400 });
   }
