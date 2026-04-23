@@ -66,6 +66,11 @@ export async function POST(request: Request) {
       if (subscription && userId) {
         const item = subscription.items.data[0];
 
+        const currentPeriodEnd =
+          item && typeof item.current_period_end === "number"
+            ? new Date(item.current_period_end * 1000).toISOString()
+            : null;
+
         await supabaseAdmin.from("subscriptions").upsert({
           user_id: userId,
           stripe_customer_id: customerId,
@@ -73,7 +78,7 @@ export async function POST(request: Request) {
           stripe_price_id: typeof item?.price?.id === "string" ? item.price.id : null,
           status: subscription.status,
           interval: item?.price?.recurring?.interval ?? null,
-          current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+          current_period_end: currentPeriodEnd,
           cancel_at_period_end: subscription.cancel_at_period_end,
           updated_at: new Date().toISOString(),
         });
