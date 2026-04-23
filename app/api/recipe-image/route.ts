@@ -2,18 +2,6 @@ import OpenAI from "openai";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-const supabase =
-  process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY
-    ? createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL,
-        process.env.SUPABASE_SERVICE_ROLE_KEY
-      )
-    : null;
-
 const FALLBACK_IMAGE =
   "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1200&q=80";
 
@@ -51,7 +39,11 @@ Requirements:
 `.trim();
 }
 
-async function generateRecipeImage(recipe: RecipePayload): Promise<string> {
+async function generateRecipeImage(
+  recipe: RecipePayload,
+  openai: OpenAI,
+  supabase: ReturnType<typeof createClient> | null
+): Promise<string> {
   try {
     const imageResponse = await openai.images.generate({
       model: "gpt-image-1",
@@ -96,6 +88,26 @@ async function generateRecipeImage(recipe: RecipePayload): Promise<string> {
 
 export async function POST(request: NextRequest) {
   try {
+    const openaiApiKey = process.env.OPENAI_API_KEY;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!openaiApiKey) {
+      return NextResponse.json(
+        { error: "Recipe image generation is not enabled yet." },
+        { status: 501 }
+      );
+    }
+
+    const openai = new OpenAI({
+      apiKey: openaiApiKey,
+    });
+
+    const supabase =
+      supabaseUrl && supabaseServiceRoleKey
+        ? createClient(supabaseUrl, supabaseServiceRoleKey)
+        : null;
+
     const body = await request.json();
     const recipe = body?.recipe as RecipePayload | undefined;
 
@@ -103,7 +115,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing recipe data" }, { status: 400 });
     }
 
-    const imageUrl = await generateRecipeImage(recipe);
+    const imageUrl = await generateRecipeImage(recipe, openai, supabase);
 
     if (supabase && recipe.id) {
       const { error } = await supabase
