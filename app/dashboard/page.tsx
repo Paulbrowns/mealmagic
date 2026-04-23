@@ -133,8 +133,7 @@ export default function DashboardPage() {
       description: recipeDescription.trim(),
       meal_type: recipeMealType,
       cuisine: recipeCuisine.trim() || 'British',
-      image_url:
-        'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1200&q=80',
+      image_url: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1200&q=80',
       prep_time: 15,
       cook_time: 20,
       serves: 4,
@@ -206,23 +205,15 @@ export default function DashboardPage() {
                             <div>
                               <div className="badge">{mealType}</div>
                               <div style={{ fontWeight: 700, marginTop: 8 }}>{recipe.title}</div>
-                              <div className="small" style={{ marginTop: 4 }}>
-                                {recipe.description}
-                              </div>
+                              <div className="small" style={{ marginTop: 4 }}>{recipe.description}</div>
                             </div>
                           </div>
 
                           <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                            <button
-                              className="btn btn-secondary"
-                              onClick={() => setSelectedRecipeId(recipe.id)}
-                            >
+                            <button className="btn btn-secondary" onClick={() => setSelectedRecipeId(recipe.id)}>
                               Open
                             </button>
-                            <button
-                              className="btn btn-secondary"
-                              onClick={() => swapMeal(day, mealType)}
-                            >
+                            <button className="btn btn-secondary" onClick={() => swapMeal(day, mealType)}>
                               <RefreshCw size={16} /> Replace
                             </button>
                           </div>
@@ -268,12 +259,7 @@ export default function DashboardPage() {
           <div className="card" style={{ padding: 24 }}>
             <h3 style={{ marginTop: 0 }}>Add household member</h3>
             <div className="list">
-              <input
-                className="input"
-                placeholder="Name"
-                value={memberName}
-                onChange={(e) => setMemberName(e.target.value)}
-              />
+              <input className="input" placeholder="Name" value={memberName} onChange={(e) => setMemberName(e.target.value)} />
               <select className="select" value={memberAge} onChange={(e) => setMemberAge(e.target.value)}>
                 <option>Adult</option>
                 <option>Teenager</option>
@@ -292,9 +278,7 @@ export default function DashboardPage() {
                 value={memberAllergies}
                 onChange={(e) => setMemberAllergies(e.target.value)}
               />
-              <button className="btn btn-success" onClick={addMember}>
-                Add member
-              </button>
+              <button className="btn btn-success" onClick={addMember}>Add member</button>
             </div>
           </div>
 
@@ -307,9 +291,7 @@ export default function DashboardPage() {
                     <strong>{member.name}</strong>
                     <span className="pill">{member.age_group}</span>
                   </div>
-                  <div className="small" style={{ marginTop: 8 }}>
-                    Diet: {member.diet}
-                  </div>
+                  <div className="small" style={{ marginTop: 8 }}>Diet: {member.diet}</div>
                   <div className="small">Allergies: {member.allergies.join(', ') || 'None'}</div>
                 </div>
               ))}
@@ -321,48 +303,17 @@ export default function DashboardPage() {
           <div className="card" style={{ padding: 24 }}>
             <h3 style={{ marginTop: 0 }}>Manually add a recipe</h3>
             <div className="list">
-              <input
-                className="input"
-                placeholder="Recipe title"
-                value={recipeTitle}
-                onChange={(e) => setRecipeTitle(e.target.value)}
-              />
-              <textarea
-                className="textarea"
-                placeholder="Brief description"
-                value={recipeDescription}
-                onChange={(e) => setRecipeDescription(e.target.value)}
-              />
-              <select
-                className="select"
-                value={recipeMealType}
-                onChange={(e) => setRecipeMealType(e.target.value as MealType)}
-              >
+              <input className="input" placeholder="Recipe title" value={recipeTitle} onChange={(e) => setRecipeTitle(e.target.value)} />
+              <textarea className="textarea" placeholder="Brief description" value={recipeDescription} onChange={(e) => setRecipeDescription(e.target.value)} />
+              <select className="select" value={recipeMealType} onChange={(e) => setRecipeMealType(e.target.value as MealType)}>
                 <option>Breakfast</option>
                 <option>Lunch</option>
                 <option>Dinner</option>
               </select>
-              <input
-                className="input"
-                placeholder="Cuisine"
-                value={recipeCuisine}
-                onChange={(e) => setRecipeCuisine(e.target.value)}
-              />
-              <textarea
-                className="textarea"
-                placeholder="Ingredients, one per line"
-                value={recipeIngredients}
-                onChange={(e) => setRecipeIngredients(e.target.value)}
-              />
-              <textarea
-                className="textarea"
-                placeholder="Method, one step per line"
-                value={recipeMethod}
-                onChange={(e) => setRecipeMethod(e.target.value)}
-              />
-              <button className="btn btn-primary" onClick={addRecipe}>
-                Save recipe
-              </button>
+              <input className="input" placeholder="Cuisine" value={recipeCuisine} onChange={(e) => setRecipeCuisine(e.target.value)} />
+              <textarea className="textarea" placeholder="Ingredients, one per line" value={recipeIngredients} onChange={(e) => setRecipeIngredients(e.target.value)} />
+              <textarea className="textarea" placeholder="Method, one step per line" value={recipeMethod} onChange={(e) => setRecipeMethod(e.target.value)} />
+              <button className="btn btn-primary" onClick={addRecipe}>Save recipe</button>
             </div>
           </div>
 
@@ -371,11 +322,7 @@ export default function DashboardPage() {
             <div className="grid grid-2">
               {recipes.map((recipe) => (
                 <div key={recipe.id} className="card" style={{ overflow: 'hidden' }}>
-                  <img
-                    src={recipe.image_url}
-                    alt={recipe.title}
-                    style={{ height: 180, width: '100%', objectFit: 'cover' }}
-                  />
+                  <img src={recipe.image_url} alt={recipe.title} style={{ height: 180, width: '100%', objectFit: 'cover' }} />
                   <div style={{ padding: 16 }}>
                     <div className="row" style={{ flexWrap: 'wrap' }}>
                       <span className="pill">{recipe.meal_type}</span>
@@ -383,11 +330,7 @@ export default function DashboardPage() {
                     </div>
                     <div style={{ fontWeight: 700, marginTop: 10 }}>{recipe.title}</div>
                     <div className="small" style={{ marginTop: 6 }}>{recipe.description}</div>
-                    <button
-                      className="btn btn-secondary"
-                      style={{ marginTop: 12 }}
-                      onClick={() => setSelectedRecipeId(recipe.id)}
-                    >
+                    <button className="btn btn-secondary" style={{ marginTop: 12 }} onClick={() => setSelectedRecipeId(recipe.id)}>
                       View recipe
                     </button>
                   </div>
@@ -406,21 +349,13 @@ export default function DashboardPage() {
                 <h2 style={{ margin: 0 }}>{selectedRecipe.title}</h2>
                 <div className="small">{selectedRecipe.description}</div>
               </div>
-              <button className="btn btn-secondary" onClick={() => setSelectedRecipeId(null)}>
-                Close
-              </button>
+              <button className="btn btn-secondary" onClick={() => setSelectedRecipeId(null)}>Close</button>
             </div>
 
             <img
               src={selectedRecipe.image_url}
               alt={selectedRecipe.title}
-              style={{
-                marginTop: 16,
-                borderRadius: 20,
-                height: 280,
-                width: '100%',
-                objectFit: 'cover',
-              }}
+              style={{ marginTop: 16, borderRadius: 20, height: 280, width: '100%', objectFit: 'cover' }}
             />
 
             <div className="grid grid-2 section">
@@ -428,40 +363,20 @@ export default function DashboardPage() {
                 <div className="row" style={{ flexWrap: 'wrap' }}>
                   <span className="pill">{selectedRecipe.meal_type}</span>
                   <span className="pill">{selectedRecipe.cuisine}</span>
-                  {selectedRecipe.tags.map((tag) => (
-                    <span className="pill" key={tag}>
-                      {tag}
-                    </span>
-                  ))}
+                  {selectedRecipe.tags.map((tag) => <span className="pill" key={tag}>{tag}</span>)}
                 </div>
 
                 <div className="grid grid-3" style={{ marginTop: 16 }}>
-                  <div className="card" style={{ padding: 12 }}>
-                    <div className="small">Prep</div>
-                    <strong>{selectedRecipe.prep_time} min</strong>
-                  </div>
-                  <div className="card" style={{ padding: 12 }}>
-                    <div className="small">Cook</div>
-                    <strong>{selectedRecipe.cook_time} min</strong>
-                  </div>
-                  <div className="card" style={{ padding: 12 }}>
-                    <div className="small">Serves</div>
-                    <strong>{selectedRecipe.serves}</strong>
-                  </div>
+                  <div className="card" style={{ padding: 12 }}><div className="small">Prep</div><strong>{selectedRecipe.prep_time} min</strong></div>
+                  <div className="card" style={{ padding: 12 }}><div className="small">Cook</div><strong>{selectedRecipe.cook_time} min</strong></div>
+                  <div className="card" style={{ padding: 12 }}><div className="small">Serves</div><strong>{selectedRecipe.serves}</strong></div>
                 </div>
 
                 {selectedRecipe.allergens.length > 0 && (
                   <div className="card" style={{ padding: 16, marginTop: 16 }}>
-                    <div className="row">
-                      <AlertTriangle size={16} />
-                      <strong>Allergens</strong>
-                    </div>
+                    <div className="row"><AlertTriangle size={16} /><strong>Allergens</strong></div>
                     <div className="row" style={{ flexWrap: 'wrap', marginTop: 8 }}>
-                      {selectedRecipe.allergens.map((allergen) => (
-                        <span key={allergen} className="pill">
-                          {allergen}
-                        </span>
-                      ))}
+                      {selectedRecipe.allergens.map((allergen) => <span key={allergen} className="pill">{allergen}</span>)}
                     </div>
                   </div>
                 )}
@@ -471,17 +386,13 @@ export default function DashboardPage() {
                 <h3>Ingredients</h3>
                 <div className="list">
                   {selectedRecipe.ingredients.map((ingredient) => (
-                    <div key={ingredient} className="pill" style={{ width: 'fit-content' }}>
-                      {ingredient}
-                    </div>
+                    <div key={ingredient} className="pill" style={{ width: 'fit-content' }}>{ingredient}</div>
                   ))}
                 </div>
 
                 <h3 style={{ marginTop: 20 }}>Method</h3>
                 <ol className="list">
-                  {selectedRecipe.method.map((step, index) => (
-                    <li key={index}>{step}</li>
-                  ))}
+                  {selectedRecipe.method.map((step, index) => <li key={index}>{step}</li>)}
                 </ol>
               </div>
             </div>
