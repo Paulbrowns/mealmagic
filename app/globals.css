@@ -49,4 +49,16 @@ button, input, textarea, select { font: inherit; }
 .dialog { width: min(960px, 100%); max-height: 90vh; overflow: auto; background: white; border-radius: 24px; padding: 24px; }
 .progress { height: 10px; border-radius: 999px; background: #e5e7eb; overflow: hidden; }
 .progress > span { display: block; height: 100%; background: var(--success); }
+
+.header .container > .row > div:first-child {
+  background-image: url('/mealmagic-logo.svg') !important;
+  background-size: cover !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+}
+
+.header .container > .row > div:first-child svg {
+  opacity: 0 !important;
+}
+
 @media (max-width: 900px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
