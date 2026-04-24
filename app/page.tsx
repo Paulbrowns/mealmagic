@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { CalendarDays, CheckCircle2, ShoppingCart, Sparkles, Users } from 'lucide-react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { AuthModal } from '@/components/AuthModal';
@@ -48,7 +48,7 @@ const previewPanels = [
   },
 ];
 
-export default function HomePage() {
+function LandingPage() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -236,5 +236,13 @@ export default function HomePage() {
 
       <AuthModal isOpen={authOpen} onClose={closeAuth} />
     </div>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <Suspense fallback={<div />}>
+      <LandingPage />
+    </Suspense>
   );
 }
