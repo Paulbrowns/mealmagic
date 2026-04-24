@@ -2,7 +2,7 @@ import './globals.css';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'MealMap',
+  title: 'MealMagic',
   description: 'Weekly breakfast, lunch and dinner planning for the whole household.'
 };
 
