@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 const FALLBACK_IMAGE =
   "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1200&q=80";
@@ -42,7 +42,7 @@ Requirements:
 async function generateRecipeImage(
   recipe: RecipePayload,
   openai: OpenAI,
-  supabase: ReturnType<typeof createClient> | null
+  supabase: SupabaseClient | null
 ): Promise<string> {
   try {
     const imageResponse = await openai.images.generate({
@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
       apiKey: openaiApiKey,
     });
 
-    const supabase =
+    const supabase: SupabaseClient | null =
       supabaseUrl && supabaseServiceRoleKey
         ? createClient(supabaseUrl, supabaseServiceRoleKey)
         : null;
