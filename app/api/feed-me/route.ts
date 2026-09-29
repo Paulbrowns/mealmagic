@@ -181,15 +181,14 @@ async function loadMenu(database: any, householdId: string, monthKey: string) {
     "SELECT day_number, meal_type, meal_name, is_split, locked, notes FROM menu_meals WHERE menu_id = ? ORDER BY day_number, meal_type"
   ).bind(menu.id).all();
 
-  const days = Array.from({ length: daysInMonth(monthKey) }, (_, i) => ({ day: i + 1, lunch: "", supper: "", supperSplit: false, lunchLocked: false, supperLocked: false }));
-  for (const row of (mealsResult.results ?? []) as Array<{ day_number: number; meal_type: "lunch" | "supper"; meal_name: string; is_split: number; locked: number }>) {
+  const days = Array.from({ length: daysInMonth(monthKey) }, (_, i) => ({ day: i + 1, lunch: "", supper: "", supperSplit: false }));
+  for (const row of (mealsResult.results ?? []) as Array<{ day_number: number; meal_type: "lunch" | "supper"; meal_name: string; is_split: number }>) {
     const target = days[row.day_number - 1];
     if (!target) continue;
-    if (row.meal_type === "lunch") { target.lunch = row.meal_name; target.lunchLocked = Boolean(row.locked); }
+    if (row.meal_type === "lunch") target.lunch = row.meal_name;
     if (row.meal_type === "supper") {
       target.supper = row.meal_name;
       target.supperSplit = Boolean(row.is_split);
-      target.supperLocked = Boolean(row.locked);
     }
   }
   return { id: menu.id, monthKey, days };
@@ -285,16 +284,6 @@ async function generateAndSaveMenu(database: any, householdId: string, monthKey:
   ).bind(householdId, monthKey).first();
 
   const menuId = existing?.id ?? crypto.randomUUID();
-  const lockedMeals = new Map<string, { meal_name: string; is_split: number }>();
-
-  if (existing) {
-    const lockedResult = await database.prepare(
-      "SELECT day_number, meal_type, meal_name, is_split FROM menu_meals WHERE menu_id = ? AND locked = 1"
-    ).bind(menuId).all();
-    for (const row of (lockedResult.results ?? []) as Array<{ day_number: number; meal_type: "lunch" | "supper"; meal_name: string; is_split: number }>) {
-      lockedMeals.set(`${row.day_number}:${row.meal_type}`, { meal_name: row.meal_name, is_split: row.is_split });
-    }
-  }
 
   if (!existing) {
     await database.prepare(
@@ -304,26 +293,17 @@ async function generateAndSaveMenu(database: any, householdId: string, monthKey:
     await database.prepare("DELETE FROM menu_meals WHERE menu_id = ?").bind(menuId).run();
   }
 
-  const statements = days.flatMap((day) => {
-    const lunchLock = lockedMeals.get(`${day.day}:lunch`);
-    const supperLock = lockedMeals.get(`${day.day}:supper`);
-    if (lunchLock) day.lunch = lunchLock.meal_name;
-    if (supperLock) {
-      day.supper = supperLock.meal_name;
-      day.supperSplit = Boolean(supperLock.is_split);
-    }
-    return [
-      database.prepare(
-        "INSERT INTO menu_meals (id, menu_id, day_number, meal_type, meal_name, is_split, locked) VALUES (?, ?, ?, 'lunch', ?, 0, ?)"
-      ).bind(crypto.randomUUID(), menuId, day.day, day.lunch, lunchLock ? 1 : 0),
-      database.prepare(
-        "INSERT INTO menu_meals (id, menu_id, day_number, meal_type, meal_name, is_split, locked) VALUES (?, ?, ?, 'supper', ?, ?, ?)"
-      ).bind(crypto.randomUUID(), menuId, day.day, day.supper, day.supperSplit ? 1 : 0, supperLock ? 1 : 0)
-    ];
-  });
+  const statements = days.flatMap((day) => [
+    database.prepare(
+      "INSERT INTO menu_meals (id, menu_id, day_number, meal_type, meal_name, is_split) VALUES (?, ?, ?, 'lunch', ?, 0)"
+    ).bind(crypto.randomUUID(), menuId, day.day, day.lunch),
+    database.prepare(
+      "INSERT INTO menu_meals (id, menu_id, day_number, meal_type, meal_name, is_split) VALUES (?, ?, ?, 'supper', ?, ?)"
+    ).bind(crypto.randomUUID(), menuId, day.day, day.supper, day.supperSplit ? 1 : 0)
+  ]);
   if (statements.length) await database.batch(statements);
 
-  return { id: menuId, monthKey, days: days.map((day) => ({ ...day, lunchLocked: lockedMeals.has(`${day.day}:lunch`), supperLocked: lockedMeals.has(`${day.day}:supper`) })) };
+  return { id: menuId, monthKey, days };
 }
 
 export async function GET(request: Request) {
@@ -422,27 +402,6 @@ export async function POST(request: Request) {
       return withHouseholdCookie(NextResponse.json({ ok: true, menu }), householdId, household.isNew);
     }
 
-    if (body?.action === "toggle-lock") {
-      const day = Number(body.day);
-      const mealType = body.mealType === "supper" ? "supper" : "lunch";
-      const monthKey = typeof body.monthKey === "string" && /^\d{4}-\d{2}$/.test(body.monthKey) ? body.monthKey : monthKeyNow();
-      const menu = await database.prepare(
-        "SELECT id FROM menus WHERE household_id = ? AND month_key = ?"
-      ).bind(householdId, monthKey).first();
-      if (!menu) return NextResponse.json({ error: "Menu not found." }, { status: 404 });
-
-      const current = await database.prepare(
-        "SELECT locked FROM menu_meals WHERE menu_id = ? AND day_number = ? AND meal_type = ?"
-      ).bind(menu.id, day, mealType).first();
-      if (!current) return NextResponse.json({ error: "Meal not found." }, { status: 404 });
-
-      const locked = current.locked ? 0 : 1;
-      await database.prepare(
-        "UPDATE menu_meals SET locked = ? WHERE menu_id = ? AND day_number = ? AND meal_type = ?"
-      ).bind(locked, menu.id, day, mealType).run();
-      return withHouseholdCookie(NextResponse.json({ ok: true, locked: Boolean(locked) }), householdId, household.isNew);
-    }
-
     if (body?.action === "swap-meal") {
       const day = Number(body.day);
       const mealType = body.mealType === "supper" ? "supper" : "lunch";
@@ -453,10 +412,9 @@ export async function POST(request: Request) {
       if (!menu) return NextResponse.json({ error: "Menu not found." }, { status: 404 });
 
       const current = await database.prepare(
-        "SELECT meal_name, locked FROM menu_meals WHERE menu_id = ? AND day_number = ? AND meal_type = ?"
+        "SELECT meal_name FROM menu_meals WHERE menu_id = ? AND day_number = ? AND meal_type = ?"
       ).bind(menu.id, day, mealType).first();
       if (!current) return NextResponse.json({ error: "Meal not found." }, { status: 404 });
-      if (current.locked) return NextResponse.json({ error: "Unlock this meal before swapping it." }, { status: 409 });
 
       const { people } = await getHouseholdData(database, householdId);
       const regulars = people.filter((p) => p.dinerType === "regular");
