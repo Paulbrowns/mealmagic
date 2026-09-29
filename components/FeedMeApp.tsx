@@ -15,7 +15,7 @@ const suppers = ["Roast chicken, roast potatoes & vegetables","Lasagne & salad",
 export default function FeedMeApp() {
   const [people, setPeople] = useState(seedPeople);
   const [selectedId, setSelectedId] = useState("paul");
-  const [view, setView] = useState<"foodbank" | "month">("foodbank");
+  const [view, setView] = useState<"mealbank" | "month">("mealbank");
   const [version, setVersion] = useState(0);
   const selected = people.find((p) => p.id === selectedId) || people[0];
   const month = useMemo(() => Array.from({ length: 31 }, (_, i) => ({ day: i + 1, lunch: lunches[(i + version) % lunches.length], supper: suppers[(i * 3 + version) % suppers.length] })), [version]);
@@ -38,8 +38,8 @@ export default function FeedMeApp() {
   );
 
   return <main>
-    <header><div><strong>Feed Me</strong><span>What are we eating this month?</span></div><nav><button onClick={() => setView("foodbank")}>Food bank</button><button onClick={() => setView("month")}>This month</button></nav></header>
-    {view === "foodbank" ? <>
+    <header><div><strong>Feed Me</strong><span>What are we eating this month?</span></div><nav><button onClick={() => setView("mealbank")}>Meal bank</button><button onClick={() => setView("month")}>This month</button></nav></header>
+    {view === "mealbank" ? <>
       <div className="hero"><small>THREE CLICKS. MONTH SORTED.</small><h1>Tell us what you like.<br/>We’ll sort the month.</h1><p>No recipe hunting. Just the meals your household actually enjoys.</p><button className="cta" onClick={() => setView("month")}>Generate my month</button></div>
       <div className="people">{people.map((p) => <button className={selectedId === p.id ? "person active" : "person"} key={p.id} onClick={() => setSelectedId(p.id)}>{p.name}</button>)}</div>
       <div className="grid">{list("Likes","likes")}{list("Favourites","favourites")}{list("Dislikes","dislikes")}{list("Never serve","never")}</div>
