@@ -1,8 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
 
 export default function FeedMeLanding() {
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("invite")) {
+      window.location.replace(`/dashboard?${params.toString()}`);
+    }
+  }, []);
+
   return (
     <main className="landing">
       <div className="orb orbOne" />
