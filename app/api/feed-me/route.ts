@@ -6,51 +6,38 @@ export const dynamic = "force-dynamic";
 
 type Preference = "like" | "favourite" | "dislike" | "never";
 
-const HOUSEHOLD_ID = "default-household";
+const HOUSEHOLD_COOKIE = "feed_me_household";
 
-const seedPeople = [
-  {
-    id: "paul",
-    name: "Paul",
-    dinerType: "regular",
-    likes: [
-      "Open crab sandwiches","Crab","Chicken ciabatta subs","Frittata","Courgette","Lamb kofta","Greek meatballs",
-      "Sea bass","Sea bream","Cod","Scallops","Aubergine Parmigiana","Parma ham","Wagyu burgers","Cheese soufflé",
-      "Braised celery","Foie gras","Chicken livers","Lamb kidneys","Cheese fondue","Schnitzel","Ham and leek pie",
-      "Smoked salmon","Avocado","Gravlax","Sweetbreads","Coronation chicken","Cheese","Blue cheese","Tuna tataki",
-      "Gammon steak","Lasagne","Raclette","Tomato soup","Minestrone","Gazpacho","Vichyssoise","French onion soup",
-      "Fish soup","Fish chowder","Garbure","Artichoke","Smoked mackerel","Haddock","Kedgeree","Lobster",
-      "Lancashire hotpot","Onion tart","Tarte Tatin","Oxtail","Cannellini beans","Eggs and bacon","Pheasant",
-      "Partridge","Quail","Pork belly","Suckling pig","Osso buco","Salt beef","Tongue","Quiche","Roast potatoes",
-      "Spinach timbales","Steak tartare","Pâté","Avocado and prawns","Sole meunière","Moules marinières",
-      "Bouillabaisse","Coq au vin","Beef bourguignon","Duck confit","Chicken Milanese","Veal saltimbocca","Moussaka",
-      "Stuffed courgettes","Gratin dauphinois","Cauliflower cheese","Leek tart","Crab cakes","Lobster thermidor",
-      "Prawn cocktail","Smoked haddock fishcakes","Beef carpaccio","Croque monsieur","Welsh rarebit","Roast chicken"
-    ],
-    favourites: ["Steak and chips","Lobster linguine","Lancashire hotpot","Osso buco"]
-  },
-  {
-    id: "dee",
-    name: "Dee",
-    dinerType: "regular",
-    likes: [
-      "Toasted corn salad","Coronation chicken","Carbonara","Chinese takeaway","Smoked mackerel pâté",
-      "Prawn and chorizo linguine","Chicken wings with Greek dip","Toasted ham and cheese","Croissant",
-      "Lemon chicken skewers with couscous","Chickpea and pomegranate salad","Mexican chicken rice","Black bean salad",
-      "Honey soy chicken and rice","Tomato and basil pasta salad","Thai beef salad","Marinated prawn salad",
-      "Chicken and lentil bake","Lamb chops","Trout and pea linguine","Asparagus risotto","Nasi goreng",
-      "Red pepper and tomato soup","Smoked salmon flatbread","Poached salmon","Salmon orzo","Salmon with samphire",
-      "Salmon with pak choi","Chicken and ham pie","French onion soup","Chinese duck pancakes","Prawn salad",
-      "Carrot and coriander soup","Courgette and basil soup","Creamy leeks","Baked potato",
-      "Steak and chips with peppercorn sauce","Steak noodles","Salmon and red pepper rice","Salmon with tabbouleh",
-      "Lasagne","Roast beef","Roast pork","Roast lamb","Spring chicken casserole","Fish and chips","Raclette",
-      "Chicken crown with lentil salad","Poached egg on toast","Onion tarte tatin","Thai green curry",
-      "Chicken burger with lettuce slaw","Chicken shawarma","Thai fish cakes with rice","Chicken burrito bowl",
-      "Steak burrito","Crab"
-    ],
-    favourites: ["Steak and chips","Roast lamb","Chicken and ham pie","Salmon with tabbouleh"]
+function readCookie(request: Request, name: string) {
+  const header = request.headers.get("cookie") || "";
+  const found = header.split(";").map((part) => part.trim()).find((part) => part.startsWith(name + "="));
+  return found ? decodeURIComponent(found.slice(name.length + 1)) : null;
+}
+
+async function resolveHousehold(database: any, request: Request) {
+  let id = readCookie(request, HOUSEHOLD_COOKIE);
+  let isNew = false;
+  if (!id) {
+    id = crypto.randomUUID();
+    isNew = true;
   }
-] as const;
+  await database.prepare(
+    "INSERT OR IGNORE INTO households (id, name) VALUES (?, 'My household')"
+  ).bind(id).run();
+  return { id, isNew };
+}
+
+function withHouseholdCookie(response: NextResponse, householdId: string, setCookie: boolean) {
+  if (setCookie) {
+    response.cookies.set(HOUSEHOLD_COOKIE, householdId, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: true,
+      maxAge: 60 * 60 * 24 * 365
+    });
+  }
+  return response;
+}
 
 async function db() {
   const { env } = getCloudflareContext();
@@ -108,29 +95,6 @@ async function ensureSchema(database: any) {
   `);
 }
 
-async function seed(database: any) {
-  const household = await database.prepare("SELECT id FROM households WHERE id = ?").bind(HOUSEHOLD_ID).first();
-  if (household) return;
-
-  await database.prepare("INSERT INTO households (id, name) VALUES (?, ?)").bind(HOUSEHOLD_ID, "Paul + Dee").run();
-
-  for (const person of seedPeople) {
-    await database.prepare("INSERT OR IGNORE INTO people (id, household_id, name, diner_type) VALUES (?, ?, ?, ?)")
-      .bind(person.id, HOUSEHOLD_ID, person.name, person.dinerType).run();
-
-    const statements = [
-      ...person.likes.map((meal) => database.prepare(
-        "INSERT OR IGNORE INTO food_preferences (id, person_id, meal_name, preference) VALUES (?, ?, ?, ?)"
-      ).bind(crypto.randomUUID(), person.id, meal, "like")),
-      ...person.favourites.map((meal) => database.prepare(
-        "INSERT OR IGNORE INTO food_preferences (id, person_id, meal_name, preference) VALUES (?, ?, ?, ?)"
-      ).bind(crypto.randomUUID(), person.id, meal, "favourite"))
-    ];
-    if (statements.length) await database.batch(statements);
-  }
-}
-
-
 function normalise(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -170,10 +134,10 @@ function mealLooksSupper(meal: string) {
   return !["soup","sandwich","toastie","croissant","pâté","pate"].some((k) => v.includes(k));
 }
 
-async function getHouseholdData(database: any) {
+async function getHouseholdData(database: any, householdId: string) {
   const peopleResult = await database.prepare(
     "SELECT id, name, diner_type FROM people WHERE household_id = ? ORDER BY created_at, name"
-  ).bind(HOUSEHOLD_ID).all();
+  ).bind(householdId).all();
 
   const prefsResult = await database.prepare(
     `SELECT fp.person_id, fp.meal_name, fp.preference
@@ -181,7 +145,7 @@ async function getHouseholdData(database: any) {
      JOIN people p ON p.id = fp.person_id
      WHERE p.household_id = ?
      ORDER BY fp.created_at, fp.meal_name`
-  ).bind(HOUSEHOLD_ID).all();
+  ).bind(householdId).all();
 
   const peopleRows = (peopleResult.results ?? []) as Array<{ id: string; name: string; diner_type: string }>;
   const prefRows = (prefsResult.results ?? []) as Array<{ person_id: string; meal_name: string; preference: Preference }>;
@@ -202,10 +166,10 @@ async function getHouseholdData(database: any) {
   return { people, prefRows };
 }
 
-async function loadMenu(database: any, monthKey: string) {
+async function loadMenu(database: any, householdId: string, monthKey: string) {
   const menu = await database.prepare(
     "SELECT id, month_key FROM menus WHERE household_id = ? AND month_key = ?"
-  ).bind(HOUSEHOLD_ID, monthKey).first();
+  ).bind(householdId, monthKey).first();
 
   if (!menu) return null;
 
@@ -226,8 +190,8 @@ async function loadMenu(database: any, monthKey: string) {
   return { id: menu.id, monthKey, days };
 }
 
-async function generateAndSaveMenu(database: any, monthKey: string) {
-  const { people } = await getHouseholdData(database);
+async function generateAndSaveMenu(database: any, householdId: string, monthKey: string) {
+  const { people } = await getHouseholdData(database, householdId);
   const regulars = people.filter((p) => p.dinerType === "regular");
   const diners = regulars.length ? regulars : people;
 
@@ -313,14 +277,14 @@ async function generateAndSaveMenu(database: any, monthKey: string) {
 
   const existing = await database.prepare(
     "SELECT id FROM menus WHERE household_id = ? AND month_key = ?"
-  ).bind(HOUSEHOLD_ID, monthKey).first();
+  ).bind(householdId, monthKey).first();
 
   const menuId = existing?.id ?? crypto.randomUUID();
 
   if (!existing) {
     await database.prepare(
       "INSERT INTO menus (id, household_id, month_key, status) VALUES (?, ?, ?, 'active')"
-    ).bind(menuId, HOUSEHOLD_ID, monthKey).run();
+    ).bind(menuId, householdId, monthKey).run();
   } else {
     await database.prepare("DELETE FROM menu_meals WHERE menu_id = ?").bind(menuId).run();
   }
@@ -338,17 +302,23 @@ async function generateAndSaveMenu(database: any, monthKey: string) {
   return { id: menuId, monthKey, days };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const database = await db();
     await ensureSchema(database);
-    await seed(database);
+    const household = await resolveHousehold(database, request);
 
-    const { people } = await getHouseholdData(database);
+    const { people } = await getHouseholdData(database, household.id);
     const monthKey = monthKeyNow();
-    const menu = await loadMenu(database, monthKey);
+    const menu = await loadMenu(database, household.id, monthKey);
+    const householdRow = await database.prepare("SELECT name FROM households WHERE id = ?").bind(household.id).first();
 
-    return NextResponse.json({ household: { id: HOUSEHOLD_ID, name: "Paul + Dee" }, people, menu });
+    const response = NextResponse.json({
+      household: { id: household.id, name: householdRow?.name || "My household" },
+      people,
+      menu
+    });
+    return withHouseholdCookie(response, household.id, household.isNew);
   } catch (error) {
     console.error("feed-me GET", error);
     return NextResponse.json({ error: "Could not load Meal Bank." }, { status: 500 });
@@ -359,6 +329,8 @@ export async function POST(request: Request) {
   try {
     const database = await db();
     await ensureSchema(database);
+    const household = await resolveHousehold(database, request);
+    const householdId = household.id;
     const body = await request.json();
 
     if (body?.action === "preference") {
@@ -373,24 +345,30 @@ export async function POST(request: Request) {
 
       if (remove) {
         await database.prepare(
-          "DELETE FROM food_preferences WHERE person_id = ? AND lower(meal_name) = lower(?)"
-        ).bind(personId, mealName).run();
+          `DELETE FROM food_preferences
+           WHERE person_id = ? AND lower(meal_name) = lower(?)
+           AND person_id IN (SELECT id FROM people WHERE household_id = ?)`
+        ).bind(personId, mealName, householdId).run();
       } else {
+        const ownsPerson = await database.prepare(
+          "SELECT id FROM people WHERE id = ? AND household_id = ?"
+        ).bind(personId, householdId).first();
+        if (!ownsPerson) return NextResponse.json({ error: "Person not found." }, { status: 404 });
         await database.prepare(
           `INSERT INTO food_preferences (id, person_id, meal_name, preference)
            VALUES (?, ?, ?, ?)
            ON CONFLICT(person_id, meal_name) DO UPDATE SET preference = excluded.preference`
         ).bind(crypto.randomUUID(), personId, mealName, preference).run();
       }
-      return NextResponse.json({ ok: true });
+      return withHouseholdCookie(NextResponse.json({ ok: true }), householdId, household.isNew);
     }
 
     if (body?.action === "generate-month") {
       const monthKey = typeof body.monthKey === "string" && /^\d{4}-\d{2}$/.test(body.monthKey)
         ? body.monthKey
         : monthKeyNow();
-      const menu = await generateAndSaveMenu(database, monthKey);
-      return NextResponse.json({ ok: true, menu });
+      const menu = await generateAndSaveMenu(database, householdId, monthKey);
+      return withHouseholdCookie(NextResponse.json({ ok: true, menu }), householdId, household.isNew);
     }
 
     if (body?.action === "add-person") {
@@ -400,8 +378,9 @@ export async function POST(request: Request) {
       const id = crypto.randomUUID();
       await database.prepare(
         "INSERT INTO people (id, household_id, name, diner_type) VALUES (?, ?, ?, ?)"
-      ).bind(id, HOUSEHOLD_ID, name, dinerType).run();
-      return NextResponse.json({ ok: true, person: { id, name, dinerType } });
+      ).bind(id, householdId, name, dinerType).run();
+      const response = NextResponse.json({ ok: true, person: { id, name, dinerType } });
+      return withHouseholdCookie(response, householdId, household.isNew);
     }
 
     return NextResponse.json({ error: "Unknown action." }, { status: 400 });
