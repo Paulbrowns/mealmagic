@@ -22,6 +22,7 @@
     "d1_databases": [
       {
         "binding": "DB",
+        "database_name": "feed-me-staging",
         "database_id": "57ab9230-d10c-4fd3-bdf6-648244dc0f79"
       }
     ]
