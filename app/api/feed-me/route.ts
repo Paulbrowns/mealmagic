@@ -31,7 +31,7 @@ async function hashPassword(password: string, saltHex?: string) {
     ["deriveBits"]
   );
   const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", hash: "SHA-256", salt, iterations: 150000 },
+    { name: "PBKDF2", hash: "SHA-256", salt, iterations: 100000 },
     key,
     256
   );
@@ -84,10 +84,22 @@ async function resolveHousehold(database: any, request: Request) {
 
   let id = requestedId;
   let isNew = false;
+
+  if (id) {
+    const protectedHousehold = await database.prepare(
+      "SELECT 1 AS protected FROM household_members WHERE household_id = ? LIMIT 1"
+    ).bind(id).first();
+    if (protectedHousehold) {
+      id = null;
+      isNew = true;
+    }
+  }
+
   if (!id) {
     id = crypto.randomUUID();
     isNew = true;
   }
+
   await database.prepare(
     "INSERT OR IGNORE INTO households (id, name) VALUES (?, 'My household')"
   ).bind(id).run();
@@ -563,6 +575,7 @@ export async function POST(request: Request) {
       }
       const response = NextResponse.json({ ok: true });
       response.cookies.set(SESSION_COOKIE, "", { httpOnly: true, sameSite: "lax", secure: true, maxAge: 0 });
+      response.cookies.set(HOUSEHOLD_COOKIE, "", { httpOnly: true, sameSite: "lax", secure: true, maxAge: 0 });
       return response;
     }
 
