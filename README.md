@@ -11,7 +11,7 @@ A deliberately simple household meal planner.
 - shared household meals are prioritised
 - occasional split suppers are allowed when a favourite is worth the effort
 - lunches default to simple soups, sandwiches and light meals
-- food banks remain editable as tastes change
+- meal banks remain editable as tastes change
 - recipes are optional, not the product
 
 ## Stack
@@ -34,7 +34,7 @@ A deliberately simple household meal planner.
 
 ## Next
 
-1. wire Food Bank writes to D1
+1. wire Meal Bank writes to D1
 2. persist households and people
 3. structured OpenAI monthly generation
 4. swap + lock meals
