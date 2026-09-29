@@ -1,71 +1,42 @@
-# MealMap app scaffold
+# Feed Me
 
-A real browser-run starter for the household meal-planning app using:
-- Next.js
-- Supabase
-- Netlify
+A deliberately simple household meal planner.
 
-## 1. Install
+**Promise:** Tell us what you like. Tell us what you hate. Get a month of meals.
 
-```bash
-npm install
-```
+## Product principles
 
-## 2. Create `.env.local`
+- no giant recipe catalogue
+- people type their own likes, favourites, dislikes and never-serve meals
+- shared household meals are prioritised
+- occasional split suppers are allowed when a favourite is worth the effort
+- lunches default to simple soups, sandwiches and light meals
+- food banks remain editable as tastes change
+- recipes are optional, not the product
 
-```env
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-```
+## Stack
 
-## 3. Run locally
+- Next.js / React PWA
+- Cloudflare Workers
+- Cloudflare D1
+- GitHub
+- OpenAI API for menu generation
+- Stripe later, after the core experience is right
 
-```bash
-npm run dev
-```
+## Staging now
 
-## 4. Supabase setup
+- Paul + Dee seeded as real QA data
+- editable Likes / Favourites / Dislikes / Never serve
+- 31-day lunch + supper view
+- responsive UI
+- initial D1 schema in `db/migrations/0001_initial.sql`
+- Cloudflare config in `wrangler.jsonc`
 
-Run `supabase/schema.sql` in the Supabase SQL Editor.
+## Next
 
-For first testing only, disable RLS on:
-- households
-- household_members
-- recipes
-- weekly_plans
-- weekly_plan_meals
-- recipe_feedback
-- referrals
-
-## 5. Netlify setup
-
-- Push this project to GitHub
-- In Netlify, add a new project from Git
-- Select the repo
-- Build command: `npm run build`
-- Publish directory: leave framework default for Next.js
-- Add environment variables:
-  - `NEXT_PUBLIC_SUPABASE_URL`
-  - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- Deploy
-
-## 6. What’s included
-
-- marketing homepage
-- browser dashboard
-- household member creation
-- manual recipe creation
-- recipe library
-- shopping list
-- recipe detail modal
-- Supabase-ready reads and writes
-- API route scaffold for AI meal planning
-
-## 7. Recommended next build steps
-
-1. Add Supabase Auth
-2. Create one household record per signed-in user
-3. Attach members and plans to the household
-4. Persist weekly planner data
-5. Add OpenAI meal-planning endpoint
-6. Add proper RLS policies
+1. wire Food Bank writes to D1
+2. persist households and people
+3. structured OpenAI monthly generation
+4. swap + lock meals
+5. PWA manifest / offline shell
+6. print/PDF view
