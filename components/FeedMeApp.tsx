@@ -12,6 +12,7 @@ export default function FeedMeApp() {
   const [selectedId, setSelectedId] = useState("");
   const [onboardingName, setOnboardingName] = useState("");
   const [onboardingType, setOnboardingType] = useState<"regular" | "occasional">("regular");
+  const [onboardingError, setOnboardingError] = useState("");
   const [view, setView] = useState<"mealbank" | "month">("mealbank");
   const [month, setMonth] = useState<MenuDay[]>([]);
   const [generating, setGenerating] = useState(false);
@@ -112,13 +113,28 @@ export default function FeedMeApp() {
 
   const startHousehold = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!onboardingName.trim()) return;
+    const name = onboardingName.trim();
+    if (!name) return;
+    setSaveState("saving");
+    setOnboardingError("");
     try {
-      await createPerson(onboardingName, onboardingType);
+      const res = await fetch("/api/feed-me", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "start-household", name, dinerType: onboardingType })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.person) throw new Error(data.error || "Could not save your name.");
+      const person: Person = { ...data.person, likes: [], favourites: [], dislikes: [], never: [] };
+      setPeople([person]);
+      setSelectedId(person.id);
       setOnboardingName("");
       setView("mealbank");
-    } catch {
+      setSaveState("saved");
+      window.setTimeout(() => setSaveState("idle"), 1200);
+    } catch (error) {
       setSaveState("error");
+      setOnboardingError(error instanceof Error ? error.message : "Could not save your name.");
     }
   };
 
@@ -157,6 +173,7 @@ export default function FeedMeApp() {
           <button type="button" className={onboardingType === "occasional" ? "active" : ""} onClick={() => setOnboardingType("occasional")}>Occasional diner</button>
         </div>
         <button className="cta" disabled={!onboardingName.trim() || saveState === "saving"}>{saveState === "saving" ? "Saving…" : "Continue"}</button>
+        {onboardingError ? <div className="onboardingerror">{onboardingError}</div> : null}
       </form>
     </section> : view === "mealbank" ? <>
       <div className="hero"><small>THREE CLICKS. MONTH SORTED.</small><h1>Tell us what you like.<br/>We’ll sort the month.</h1><p>No recipe hunting. Just the meals your household actually enjoys.</p><button className="cta" onClick={generateMonth} disabled={generating}>{generating ? "Sorting your month…" : month.length ? "Regenerate my month" : "Generate my month"}</button></div>
@@ -168,7 +185,7 @@ export default function FeedMeApp() {
       *{box-sizing:border-box} body{margin:0;background:#f7f6f2;color:#20251f;font-family:Arial,sans-serif} button,input{font:inherit} button{cursor:pointer}
       header{position:sticky;top:0;z-index:10;display:flex;justify-content:space-between;align-items:center;padding:18px 5vw;background:rgba(247,246,242,.95);border-bottom:1px solid #e5e2d9} header strong{display:block;font:700 28px Georgia,serif} header span{font-size:12px;color:#777} nav{display:flex;gap:8px} nav button,.person,.regen{border:1px solid #ddd8cc;background:white;border-radius:999px;padding:9px 14px}
       .hero{max-width:900px;margin:auto;text-align:center;padding:90px 24px 60px}.hero small,.month small{color:#657062;font-weight:700;letter-spacing:.08em}.hero h1,.month h1{font:600 clamp(46px,7vw,78px)/1 Georgia,serif;letter-spacing:-2px;margin:18px 0}.hero p,.month p{color:#73776f;font-size:18px}.cta{border:0;border-radius:14px;background:#263126;color:white;padding:14px 20px;font-weight:700;margin-top:10px}
-      .onboarding{max-width:620px;margin:0 auto;padding:110px 24px;text-align:center}.onboarding small{color:#657062;font-weight:700;letter-spacing:.08em}.onboarding h1{font:600 clamp(48px,7vw,72px)/1 Georgia,serif;letter-spacing:-2px;margin:18px 0}.onboarding p{color:#73776f;font-size:18px}.onboarding form{max-width:430px;margin:32px auto 0;display:grid;gap:12px}.onboarding input{width:100%;border:1px solid #d8d3c7;border-radius:14px;padding:14px 16px;background:white}.typepick{display:grid;grid-template-columns:1fr 1fr;gap:8px}.typepick button{border:1px solid #ddd8cc;background:white;border-radius:12px;padding:12px}.typepick button.active{background:#263126;color:white;border-color:#263126}.setuphint{max-width:1180px;margin:0 auto 14px;padding:0 24px;display:flex;gap:10px;align-items:baseline}.setuphint span{color:#777;font-size:13px}.people,.grid,.month{max-width:1180px;margin:auto}.people{padding:0 24px 18px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.person.active{background:#263126;color:white;border-color:#263126}.addperson{border-style:dashed}.savestate{margin-left:auto;font-size:12px;color:#777}.savestate.error{color:#9b3b32}.savestate.saved{color:#4f6b4a}.grid{padding:0 24px 80px;display:grid;grid-template-columns:1fr 1fr;gap:14px}.card{background:white;border:1px solid #e4e0d5;border-radius:20px;padding:20px}.card h3{margin-top:0}.chips{display:flex;gap:7px;flex-wrap:wrap;min-height:38px}.chip{border:0;background:#edf2e9;color:#465342;border-radius:999px;padding:7px 10px}.addrow{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:14px}.addrow input{border:1px solid #ddd8cc;border-radius:12px;padding:11px}.addrow button{border:0;border-radius:12px;background:#263126;color:white;padding:0 16px}
+      .onboarding{max-width:620px;margin:0 auto;padding:110px 24px;text-align:center}.onboarding small{color:#657062;font-weight:700;letter-spacing:.08em}.onboarding h1{font:600 clamp(48px,7vw,72px)/1 Georgia,serif;letter-spacing:-2px;margin:18px 0}.onboarding p{color:#73776f;font-size:18px}.onboarding form{max-width:430px;margin:32px auto 0;display:grid;gap:12px}.onboarding input{width:100%;border:1px solid #d8d3c7;border-radius:14px;padding:14px 16px;background:white}.typepick{display:grid;grid-template-columns:1fr 1fr;gap:8px}.typepick button{border:1px solid #ddd8cc;background:white;border-radius:12px;padding:12px}.typepick button.active{background:#263126;color:white;border-color:#263126}.onboardingerror{font-size:13px;color:#9b3b32}.setuphint{max-width:1180px;margin:0 auto 14px;padding:0 24px;display:flex;gap:10px;align-items:baseline}.setuphint span{color:#777;font-size:13px}.people,.grid,.month{max-width:1180px;margin:auto}.people{padding:0 24px 18px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.person.active{background:#263126;color:white;border-color:#263126}.addperson{border-style:dashed}.savestate{margin-left:auto;font-size:12px;color:#777}.savestate.error{color:#9b3b32}.savestate.saved{color:#4f6b4a}.grid{padding:0 24px 80px;display:grid;grid-template-columns:1fr 1fr;gap:14px}.card{background:white;border:1px solid #e4e0d5;border-radius:20px;padding:20px}.card h3{margin-top:0}.chips{display:flex;gap:7px;flex-wrap:wrap;min-height:38px}.chip{border:0;background:#edf2e9;color:#465342;border-radius:999px;padding:7px 10px}.addrow{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:14px}.addrow input{border:1px solid #ddd8cc;border-radius:12px;padding:11px}.addrow button{border:0;border-radius:12px;background:#263126;color:white;padding:0 16px}
       .month{padding:56px 24px 80px}.monthtop{display:flex;justify-content:space-between;align-items:end;gap:24px}.monthtop h1{font-size:64px;margin-bottom:10px}.monthgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:28px}.monthgrid article{background:white;border:1px solid #e4e0d5;border-radius:18px;padding:18px;min-height:170px}.monthgrid article.splitday{border-style:dashed;background:#fbfaf6}.monthgrid label{display:block;margin-top:14px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#888}
       .emptymonth{text-align:center;background:white;border:1px solid #e4e0d5;border-radius:20px;padding:48px;margin-top:28px}.emptymonth h2{font:600 34px Georgia,serif;margin:0 0 10px}button:disabled{opacity:.6;cursor:wait} @media(max-width:850px){.monthgrid{grid-template-columns:repeat(2,1fr)}} @media(max-width:650px){.grid,.monthgrid{grid-template-columns:1fr}.monthtop{align-items:flex-start;flex-direction:column}header span{display:none}.hero{padding-top:60px}}
     `}</style>
