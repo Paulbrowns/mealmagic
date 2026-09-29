@@ -438,6 +438,22 @@ export async function POST(request: Request) {
       return withHouseholdCookie(NextResponse.json({ ok: true, mealName: alternative }), householdId, household.isNew);
     }
 
+    if (body?.action === "delete-person") {
+      const personId = String(body.personId || "");
+      if (!personId) return NextResponse.json({ error: "Person is required." }, { status: 400 });
+
+      const ownsPerson = await database.prepare(
+        "SELECT id FROM people WHERE id = ? AND household_id = ?"
+      ).bind(personId, householdId).first();
+      if (!ownsPerson) return NextResponse.json({ error: "Person not found." }, { status: 404 });
+
+      await database.prepare(
+        "DELETE FROM people WHERE id = ? AND household_id = ?"
+      ).bind(personId, householdId).run();
+
+      return withHouseholdCookie(NextResponse.json({ ok: true }), householdId, household.isNew);
+    }
+
     if (body?.action === "add-person") {
       const name = String(body.name || "").trim();
       const dinerType = body.dinerType === "occasional" ? "occasional" : "regular";
