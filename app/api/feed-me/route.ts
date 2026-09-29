@@ -83,6 +83,28 @@ async function ensureSchema(database: any) {
     );
     CREATE INDEX IF NOT EXISTS idx_people_household ON people(household_id);
     CREATE INDEX IF NOT EXISTS idx_preferences_person ON food_preferences(person_id);
+
+    CREATE TABLE IF NOT EXISTS menus (
+      id TEXT PRIMARY KEY,
+      household_id TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+      month_key TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(household_id, month_key)
+    );
+    CREATE TABLE IF NOT EXISTS menu_meals (
+      id TEXT PRIMARY KEY,
+      menu_id TEXT NOT NULL REFERENCES menus(id) ON DELETE CASCADE,
+      day_number INTEGER NOT NULL CHECK(day_number BETWEEN 1 AND 31),
+      meal_type TEXT NOT NULL CHECK(meal_type IN ('lunch','supper')),
+      meal_name TEXT NOT NULL,
+      is_split INTEGER NOT NULL DEFAULT 0,
+      locked INTEGER NOT NULL DEFAULT 0,
+      notes TEXT,
+      UNIQUE(menu_id, day_number, meal_type)
+    );
+    CREATE INDEX IF NOT EXISTS idx_menus_household ON menus(household_id);
+    CREATE INDEX IF NOT EXISTS idx_menu_meals_menu ON menu_meals(menu_id);
   `);
 }
 
@@ -108,38 +130,225 @@ async function seed(database: any) {
   }
 }
 
+
+function normalise(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function monthKeyNow() {
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function daysInMonth(monthKey: string) {
+  const [year, month] = monthKey.split("-").map(Number);
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function rotate<T>(items: T[], offset: number) {
+  if (!items.length) return items;
+  const n = ((offset % items.length) + items.length) % items.length;
+  return [...items.slice(n), ...items.slice(0, n)];
+}
+
+function pickWithSpacing(pool: string[], index: number, recent: string[]) {
+  if (!pool.length) return "Something easy from the Meal Bank";
+  for (let step = 0; step < pool.length; step += 1) {
+    const candidate = pool[(index + step) % pool.length];
+    if (!recent.includes(normalise(candidate))) return candidate;
+  }
+  return pool[index % pool.length];
+}
+
+function mealLooksLunchy(meal: string) {
+  const v = normalise(meal);
+  return ["soup","sandwich","toast","toastie","croissant","salad","pâté","pate","baked potato","flatbread","quiche","eggs","egg","gazpacho","vichyssoise"].some((k) => v.includes(k));
+}
+
+function mealLooksSupper(meal: string) {
+  const v = normalise(meal);
+  return !["soup","sandwich","toastie","croissant","pâté","pate"].some((k) => v.includes(k));
+}
+
+async function getHouseholdData(database: any) {
+  const peopleResult = await database.prepare(
+    "SELECT id, name, diner_type FROM people WHERE household_id = ? ORDER BY created_at, name"
+  ).bind(HOUSEHOLD_ID).all();
+
+  const prefsResult = await database.prepare(
+    `SELECT fp.person_id, fp.meal_name, fp.preference
+     FROM food_preferences fp
+     JOIN people p ON p.id = fp.person_id
+     WHERE p.household_id = ?
+     ORDER BY fp.created_at, fp.meal_name`
+  ).bind(HOUSEHOLD_ID).all();
+
+  const peopleRows = (peopleResult.results ?? []) as Array<{ id: string; name: string; diner_type: string }>;
+  const prefRows = (prefsResult.results ?? []) as Array<{ person_id: string; meal_name: string; preference: Preference }>;
+
+  const people = peopleRows.map((person) => {
+    const prefs = prefRows.filter((p) => p.person_id === person.id);
+    return {
+      id: person.id,
+      name: person.name,
+      dinerType: person.diner_type,
+      likes: prefs.filter((p) => p.preference === "like").map((p) => p.meal_name),
+      favourites: prefs.filter((p) => p.preference === "favourite").map((p) => p.meal_name),
+      dislikes: prefs.filter((p) => p.preference === "dislike").map((p) => p.meal_name),
+      never: prefs.filter((p) => p.preference === "never").map((p) => p.meal_name)
+    };
+  });
+
+  return { people, prefRows };
+}
+
+async function loadMenu(database: any, monthKey: string) {
+  const menu = await database.prepare(
+    "SELECT id, month_key FROM menus WHERE household_id = ? AND month_key = ?"
+  ).bind(HOUSEHOLD_ID, monthKey).first();
+
+  if (!menu) return null;
+
+  const mealsResult = await database.prepare(
+    "SELECT day_number, meal_type, meal_name, is_split, locked, notes FROM menu_meals WHERE menu_id = ? ORDER BY day_number, meal_type"
+  ).bind(menu.id).all();
+
+  const days = Array.from({ length: daysInMonth(monthKey) }, (_, i) => ({ day: i + 1, lunch: "", supper: "", supperSplit: false }));
+  for (const row of (mealsResult.results ?? []) as Array<{ day_number: number; meal_type: "lunch" | "supper"; meal_name: string; is_split: number }>) {
+    const target = days[row.day_number - 1];
+    if (!target) continue;
+    if (row.meal_type === "lunch") target.lunch = row.meal_name;
+    if (row.meal_type === "supper") {
+      target.supper = row.meal_name;
+      target.supperSplit = Boolean(row.is_split);
+    }
+  }
+  return { id: menu.id, monthKey, days };
+}
+
+async function generateAndSaveMenu(database: any, monthKey: string) {
+  const { people } = await getHouseholdData(database);
+  const regulars = people.filter((p) => p.dinerType === "regular");
+  const diners = regulars.length ? regulars : people;
+
+  const blocked = new Set(
+    diners.flatMap((p) => [...p.dislikes, ...p.never].map(normalise))
+  );
+
+  const positiveByPerson = diners.map((p) => ({
+    ...p,
+    positive: [...p.favourites, ...p.likes].filter((meal) => !blocked.has(normalise(meal)))
+  }));
+
+  const counts = new Map<string, { meal: string; count: number }>();
+  for (const person of positiveByPerson) {
+    for (const meal of person.positive) {
+      const key = normalise(meal);
+      const entry = counts.get(key) ?? { meal, count: 0 };
+      entry.count += 1;
+      counts.set(key, entry);
+    }
+  }
+
+  const shared = [...counts.values()].filter((x) => x.count >= Math.min(2, diners.length)).map((x) => x.meal);
+  const householdFavourites = [...new Set(positiveByPerson.flatMap((p) => p.favourites))]
+    .filter((meal) => !blocked.has(normalise(meal)));
+  const allPositive = [...new Set(positiveByPerson.flatMap((p) => p.positive))];
+
+  const defaultLunches = [
+    "Tomato soup & toast","French onion soup","Coronation chicken sandwiches","Ham & cheese toasties",
+    "Smoked salmon & avocado","Carrot & coriander soup","Baked potato & cheese","Prawn & avocado salad",
+    "Smoked mackerel pâté on toast","Quiche & salad"
+  ];
+  const lunchPool = [...new Set([
+    ...shared.filter(mealLooksLunchy),
+    ...allPositive.filter(mealLooksLunchy),
+    ...defaultLunches
+  ])].filter((meal) => !blocked.has(normalise(meal)));
+
+  const supperPool = [...new Set([
+    ...shared.filter(mealLooksSupper),
+    ...householdFavourites.filter(mealLooksSupper),
+    ...allPositive.filter(mealLooksSupper)
+  ])].filter((meal) => !blocked.has(normalise(meal)));
+
+  const splitPairs: string[] = [];
+  if (positiveByPerson.length >= 2) {
+    const first = positiveByPerson[0];
+    const second = positiveByPerson[1];
+    const firstOnly = first.favourites.filter((m) => !second.positive.some((x) => normalise(x) === normalise(m)));
+    const secondOnly = second.favourites.filter((m) => !first.positive.some((x) => normalise(x) === normalise(m)));
+    const splitCount = Math.min(4, firstOnly.length, secondOnly.length);
+    for (let i = 0; i < splitCount; i += 1) {
+      splitPairs.push(`${first.name}: ${firstOnly[i]} • ${second.name}: ${secondOnly[i]}`);
+    }
+  }
+
+  const [year, month] = monthKey.split("-").map(Number);
+  const offset = (year + month) % Math.max(1, supperPool.length);
+  const rotatedSuppers = rotate(supperPool, offset);
+  const rotatedLunches = rotate(lunchPool, month % Math.max(1, lunchPool.length));
+  const totalDays = daysInMonth(monthKey);
+  const days: Array<{ day: number; lunch: string; supper: string; supperSplit: boolean }> = [];
+  const recentLunches: string[] = [];
+  const recentSuppers: string[] = [];
+
+  for (let day = 1; day <= totalDays; day += 1) {
+    const lunch = pickWithSpacing(rotatedLunches, day - 1, recentLunches.slice(-4));
+    let supperSplit = false;
+    let supper = pickWithSpacing(rotatedSuppers, (day - 1) * 3, recentSuppers.slice(-6));
+
+    if (splitPairs.length && [7, 14, 21, 28].includes(day)) {
+      const pair = splitPairs[Math.floor(day / 7) - 1];
+      if (pair) {
+        supper = pair;
+        supperSplit = true;
+      }
+    }
+
+    recentLunches.push(normalise(lunch));
+    recentSuppers.push(normalise(supper));
+    days.push({ day, lunch, supper, supperSplit });
+  }
+
+  const existing = await database.prepare(
+    "SELECT id FROM menus WHERE household_id = ? AND month_key = ?"
+  ).bind(HOUSEHOLD_ID, monthKey).first();
+
+  const menuId = existing?.id ?? crypto.randomUUID();
+
+  if (!existing) {
+    await database.prepare(
+      "INSERT INTO menus (id, household_id, month_key, status) VALUES (?, ?, ?, 'active')"
+    ).bind(menuId, HOUSEHOLD_ID, monthKey).run();
+  } else {
+    await database.prepare("DELETE FROM menu_meals WHERE menu_id = ?").bind(menuId).run();
+  }
+
+  const statements = days.flatMap((day) => [
+    database.prepare(
+      "INSERT INTO menu_meals (id, menu_id, day_number, meal_type, meal_name, is_split) VALUES (?, ?, ?, 'lunch', ?, 0)"
+    ).bind(crypto.randomUUID(), menuId, day.day, day.lunch),
+    database.prepare(
+      "INSERT INTO menu_meals (id, menu_id, day_number, meal_type, meal_name, is_split) VALUES (?, ?, ?, 'supper', ?, ?)"
+    ).bind(crypto.randomUUID(), menuId, day.day, day.supper, day.supperSplit ? 1 : 0)
+  ]);
+  if (statements.length) await database.batch(statements);
+
+  return { id: menuId, monthKey, days };
+}
+
 export async function GET() {
   try {
     const database = await db();
     await ensureSchema(database);
     await seed(database);
 
-    const peopleResult = await database.prepare(
-      "SELECT id, name, diner_type FROM people WHERE household_id = ? ORDER BY created_at, name"
-    ).bind(HOUSEHOLD_ID).all();
+    const { people } = await getHouseholdData(database);
+    const monthKey = monthKeyNow();
+    const menu = await loadMenu(database, monthKey);
 
-    const prefsResult = await database.prepare(
-      `SELECT fp.person_id, fp.meal_name, fp.preference
-       FROM food_preferences fp
-       JOIN people p ON p.id = fp.person_id
-       WHERE p.household_id = ?
-       ORDER BY fp.created_at, fp.meal_name`
-    ).bind(HOUSEHOLD_ID).all();
-
-    const people = (peopleResult.results ?? []).map((person: { id: string; name: string; diner_type: string }) => {
-      const prefs = (prefsResult.results ?? []).filter((p: { person_id: string; meal_name: string; preference: Preference }) => p.person_id === person.id);
-      return {
-        id: person.id,
-        name: person.name,
-        dinerType: person.diner_type,
-        likes: prefs.filter((p: { preference: Preference }) => p.preference === "like").map((p: { meal_name: string }) => p.meal_name),
-        favourites: prefs.filter((p: { preference: Preference }) => p.preference === "favourite").map((p: { meal_name: string }) => p.meal_name),
-        dislikes: prefs.filter((p: { preference: Preference }) => p.preference === "dislike").map((p: { meal_name: string }) => p.meal_name),
-        never: prefs.filter((p: { preference: Preference }) => p.preference === "never").map((p: { meal_name: string }) => p.meal_name)
-      };
-    });
-
-    return NextResponse.json({ household: { id: HOUSEHOLD_ID, name: "Paul + Dee" }, people });
+    return NextResponse.json({ household: { id: HOUSEHOLD_ID, name: "Paul + Dee" }, people, menu });
   } catch (error) {
     console.error("feed-me GET", error);
     return NextResponse.json({ error: "Could not load Meal Bank." }, { status: 500 });
@@ -174,6 +383,14 @@ export async function POST(request: Request) {
         ).bind(crypto.randomUUID(), personId, mealName, preference).run();
       }
       return NextResponse.json({ ok: true });
+    }
+
+    if (body?.action === "generate-month") {
+      const monthKey = typeof body.monthKey === "string" && /^\d{4}-\d{2}$/.test(body.monthKey)
+        ? body.monthKey
+        : monthKeyNow();
+      const menu = await generateAndSaveMenu(database, monthKey);
+      return NextResponse.json({ ok: true, menu });
     }
 
     if (body?.action === "add-person") {
