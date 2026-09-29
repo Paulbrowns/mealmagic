@@ -41,7 +41,9 @@ function withHouseholdCookie(response: NextResponse, householdId: string, setCoo
 
 async function db() {
   const { env } = getCloudflareContext();
-  return (env as unknown as { DB: any }).DB;
+  const database = (env as unknown as { DB?: any }).DB;
+  if (!database) throw new Error("D1 binding DB is unavailable in this deployment.");
+  return database;
 }
 
 async function ensureSchema(database: any) {
@@ -321,7 +323,8 @@ export async function GET(request: Request) {
     return withHouseholdCookie(response, household.id, household.isNew);
   } catch (error) {
     console.error("feed-me GET", error);
-    return NextResponse.json({ error: "Could not load Meal Bank." }, { status: 500 });
+    const detail = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "Could not load Meal Bank.", detail }, { status: 500 });
   }
 }
 
@@ -412,6 +415,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unknown action." }, { status: 400 });
   } catch (error) {
     console.error("feed-me POST", error);
-    return NextResponse.json({ error: "Could not save Meal Bank." }, { status: 500 });
+    const detail = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "Could not save Meal Bank.", detail }, { status: 500 });
   }
 }
