@@ -323,7 +323,7 @@ export async function GET(request: Request) {
     return withHouseholdCookie(response, household.id, household.isNew);
   } catch (error) {
     console.error("feed-me GET", error);
-    const detail = error instanceof Error ? error.message : String(error);
+    const detail = error instanceof Error ? `${error.message}${(error as Error & { cause?: { message?: string } }).cause?.message ? " — " + (error as Error & { cause?: { message?: string } }).cause?.message : ""}` : String(error);
     return NextResponse.json({ error: "Could not load Meal Bank.", detail }, { status: 500 });
   }
 }
