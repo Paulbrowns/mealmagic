@@ -31,7 +31,10 @@ export default function FeedMeApp() {
         }
         if (Array.isArray(data.menu?.days)) setMonth(data.menu.days);
       })
-      .catch(() => setSaveState("error"))
+      .catch((error) => {
+        setSaveState("error");
+        setOnboardingError(error instanceof Error ? error.message : "Could not load Meal Bank.");
+      })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
@@ -124,7 +127,7 @@ export default function FeedMeApp() {
         body: JSON.stringify({ action: "start-household", name, dinerType: onboardingType })
       });
       const data = await res.json();
-      if (!res.ok || !data.person) throw new Error(data.error || "Could not save your name.");
+      if (!res.ok || !data.person) throw new Error([data.error, data.detail].filter(Boolean).join(" — ") || "Could not save your name.");
       const person: Person = { ...data.person, likes: [], favourites: [], dislikes: [], never: [] };
       setPeople([person]);
       setSelectedId(person.id);
