@@ -67,11 +67,15 @@ export default function FeedMeApp() {
           action,
           name: String(fd.get("name") || ""),
           email: String(fd.get("email") || ""),
-          password: String(fd.get("password") || "")
+          password: String(fd.get("password") || ""),
+          inviteToken: new URLSearchParams(window.location.search).get("invite") || ""
         })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Could not continue.");
+      if (action === "register" && new URLSearchParams(window.location.search).get("invite")) {
+        window.history.replaceState({}, "", window.location.pathname);
+      }
       await reloadApp();
       setAccountPanel("manage");
       setSaveState("saved");
@@ -124,7 +128,9 @@ export default function FeedMeApp() {
   };
 
   useEffect(() => {
-    if (account) acceptInviteFromUrl();
+    const hasInvite = new URLSearchParams(window.location.search).has("invite");
+    if (hasInvite && !account) setAccountPanel("register");
+    if (hasInvite && account) acceptInviteFromUrl();
   }, [account?.id]);
 
   const selected = people.find((p) => p.id === selectedId) || people[0];
