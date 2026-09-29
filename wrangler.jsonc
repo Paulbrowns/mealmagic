@@ -2,5 +2,6 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "feed-me",
   "compatibility_date": "2026-09-29",
-  "compatibility_flags": ["nodejs_compat"]
+  "compatibility_flags": ["nodejs_compat"],
+  "previews": {}
 }
