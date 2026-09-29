@@ -126,16 +126,16 @@ export async function GET() {
        ORDER BY fp.created_at, fp.meal_name`
     ).bind(HOUSEHOLD_ID).all();
 
-    const people = (peopleResult.results ?? []).map((person) => {
-      const prefs = (prefsResult.results ?? []).filter((p) => p.person_id === person.id);
+    const people = (peopleResult.results ?? []).map((person: { id: string; name: string; diner_type: string }) => {
+      const prefs = (prefsResult.results ?? []).filter((p: { person_id: string; meal_name: string; preference: Preference }) => p.person_id === person.id);
       return {
         id: person.id,
         name: person.name,
         dinerType: person.diner_type,
-        likes: prefs.filter((p) => p.preference === "like").map((p) => p.meal_name),
-        favourites: prefs.filter((p) => p.preference === "favourite").map((p) => p.meal_name),
-        dislikes: prefs.filter((p) => p.preference === "dislike").map((p) => p.meal_name),
-        never: prefs.filter((p) => p.preference === "never").map((p) => p.meal_name)
+        likes: prefs.filter((p: { preference: Preference }) => p.preference === "like").map((p: { meal_name: string }) => p.meal_name),
+        favourites: prefs.filter((p: { preference: Preference }) => p.preference === "favourite").map((p: { meal_name: string }) => p.meal_name),
+        dislikes: prefs.filter((p: { preference: Preference }) => p.preference === "dislike").map((p: { meal_name: string }) => p.meal_name),
+        never: prefs.filter((p: { preference: Preference }) => p.preference === "never").map((p: { meal_name: string }) => p.meal_name)
       };
     });
 
