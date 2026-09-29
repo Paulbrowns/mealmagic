@@ -333,6 +333,32 @@ export async function POST(request: Request) {
     const householdId = household.id;
     const body = await request.json();
 
+    if (body?.action === "start-household") {
+      const name = String(body.name || "").trim();
+      const dinerType = body.dinerType === "occasional" ? "occasional" : "regular";
+      if (!name) return NextResponse.json({ error: "Name is required." }, { status: 400 });
+
+      // Always create a fresh household for first-run onboarding so we don't depend
+      // on a cookie having been established by the initial GET request.
+      const newHouseholdId = crypto.randomUUID();
+      const personId = crypto.randomUUID();
+
+      await database.prepare(
+        "INSERT INTO households (id, name) VALUES (?, ?)"
+      ).bind(newHouseholdId, name + "'s household").run();
+
+      await database.prepare(
+        "INSERT INTO people (id, household_id, name, diner_type) VALUES (?, ?, ?, ?)"
+      ).bind(personId, newHouseholdId, name, dinerType).run();
+
+      const response = NextResponse.json({
+        ok: true,
+        household: { id: newHouseholdId, name: name + "'s household" },
+        person: { id: personId, name, dinerType }
+      });
+      return withHouseholdCookie(response, newHouseholdId, true);
+    }
+
     if (body?.action === "preference") {
       const personId = String(body.personId || "");
       const mealName = String(body.mealName || "").trim();
