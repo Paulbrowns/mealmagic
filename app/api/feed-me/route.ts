@@ -54,10 +54,10 @@ const seedPeople = [
 
 async function db() {
   const { env } = getCloudflareContext();
-  return (env as unknown as { DB: D1Database }).DB;
+  return (env as unknown as { DB: any }).DB;
 }
 
-async function ensureSchema(database: D1Database) {
+async function ensureSchema(database: any) {
   await database.exec(`
     PRAGMA foreign_keys = ON;
     CREATE TABLE IF NOT EXISTS households (
@@ -86,7 +86,7 @@ async function ensureSchema(database: D1Database) {
   `);
 }
 
-async function seed(database: D1Database) {
+async function seed(database: any) {
   const household = await database.prepare("SELECT id FROM households WHERE id = ?").bind(HOUSEHOLD_ID).first();
   if (household) return;
 
