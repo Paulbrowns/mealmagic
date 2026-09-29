@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 
 type Person = { id: string; name: string; dinerType?: "regular" | "occasional"; likes: string[]; favourites: string[]; dislikes: string[]; never: string[] };
-type MenuDay = { day: number; lunch: string; supper: string; supperSplit?: boolean };
+type MenuDay = { day: number; lunch: string; supper: string; supperSplit?: boolean; lunchLocked?: boolean; supperLocked?: boolean };
+type Account = { id: string; email: string; name: string; role?: string | null };
 
 export default function FeedMeApp() {
   const [people, setPeople] = useState<Person[]>([]);
