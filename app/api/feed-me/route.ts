@@ -7,6 +7,47 @@ export const dynamic = "force-dynamic";
 type Preference = "like" | "favourite" | "dislike" | "never";
 
 const HOUSEHOLD_COOKIE = "feed_me_household";
+const SESSION_COOKIE = "feed_me_session";
+const SESSION_DAYS = 30;
+
+function bytesToHex(bytes: ArrayBuffer | Uint8Array) {
+  return Array.from(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes))
+    .map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function sha256(value: string) {
+  return bytesToHex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
+}
+
+async function hashPassword(password: string, saltHex?: string) {
+  const salt = saltHex
+    ? new Uint8Array((saltHex.match(/.{1,2}/g) || []).map((x) => parseInt(x, 16)))
+    : crypto.getRandomValues(new Uint8Array(16));
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(password),
+    "PBKDF2",
+    false,
+    ["deriveBits"]
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", hash: "SHA-256", salt, iterations: 150000 },
+    key,
+    256
+  );
+  return { hash: bytesToHex(bits), salt: bytesToHex(salt) };
+}
+
+function safeEqual(a: string, b: string) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+function randomToken() {
+  return bytesToHex(crypto.getRandomValues(new Uint8Array(32)));
+}
 
 function readCookie(request: Request, name: string) {
   const header = request.headers.get("cookie") || "";
@@ -36,6 +77,39 @@ function withHouseholdCookie(response: NextResponse, householdId: string, setCoo
       maxAge: 60 * 60 * 24 * 365
     });
   }
+  return response;
+}
+
+async function getSession(database: any, request: Request) {
+  const token = readCookie(request, SESSION_COOKIE);
+  if (!token) return null;
+  const tokenHash = await sha256(token);
+  const session = await database.prepare(
+    `SELECT s.id, s.user_id, u.email, u.name
+     FROM sessions s JOIN users u ON u.id = s.user_id
+     WHERE s.token_hash = ? AND s.expires_at > CURRENT_TIMESTAMP`
+  ).bind(tokenHash).first();
+  return session || null;
+}
+
+async function createSession(database: any, userId: string) {
+  const token = randomToken();
+  const tokenHash = await sha256(token);
+  const id = crypto.randomUUID();
+  await database.prepare(
+    `INSERT INTO sessions (id, user_id, token_hash, expires_at)
+     VALUES (?, ?, ?, datetime('now', '+' || ? || ' days'))`
+  ).bind(id, userId, tokenHash, SESSION_DAYS).run();
+  return token;
+}
+
+function setSessionCookie(response: NextResponse, token: string) {
+  response.cookies.set(SESSION_COOKIE, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: true,
+    maxAge: 60 * 60 * 24 * SESSION_DAYS
+  });
   return response;
 }
 
@@ -91,7 +165,42 @@ async function ensureSchema(database: any) {
       UNIQUE(menu_id, day_number, meal_type)
     )`,
     `CREATE INDEX IF NOT EXISTS idx_menus_household ON menus(household_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_menu_meals_menu ON menu_meals(menu_id)`
+    `CREATE INDEX IF NOT EXISTS idx_menu_meals_menu ON menu_meals(menu_id)`,
+    `CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      name TEXT NOT NULL,
+      password_hash TEXT NOT NULL,
+      password_salt TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token_hash)`,
+    `CREATE TABLE IF NOT EXISTS household_members (
+      household_id TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner','member')),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (household_id, user_id)
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_household_members_user ON household_members(user_id)`,
+    `CREATE TABLE IF NOT EXISTS household_invites (
+      id TEXT PRIMARY KEY,
+      household_id TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+      created_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      email TEXT,
+      expires_at TEXT NOT NULL,
+      accepted_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_household_invites_token ON household_invites(token_hash)`
   ];
 
   for (const sql of statements) {
@@ -317,10 +426,16 @@ export async function GET(request: Request) {
     const menu = await loadMenu(database, household.id, monthKey);
     const householdRow = await database.prepare("SELECT name FROM households WHERE id = ?").bind(household.id).first();
 
+    const session = await getSession(database, request);
+    const membership = session ? await database.prepare(
+      "SELECT role FROM household_members WHERE household_id = ? AND user_id = ?"
+    ).bind(household.id, session.user_id).first() : null;
+
     const response = NextResponse.json({
       household: { id: household.id, name: householdRow?.name || "My household" },
       people,
-      menu
+      menu,
+      account: session ? { id: session.user_id, email: session.email, name: session.name, role: membership?.role || null } : null
     });
     return withHouseholdCookie(response, household.id, household.isNew);
   } catch (error) {
@@ -337,6 +452,112 @@ export async function POST(request: Request) {
     const household = await resolveHousehold(database, request);
     const householdId = household.id;
     const body = await request.json();
+
+    if (body?.action === "register") {
+      const email = String(body.email || "").trim().toLowerCase();
+      const name = String(body.name || "").trim();
+      const password = String(body.password || "");
+      if (!email || !name || password.length < 8) {
+        return NextResponse.json({ error: "Name, valid email and a password of at least 8 characters are required." }, { status: 400 });
+      }
+
+      const exists = await database.prepare("SELECT id FROM users WHERE lower(email) = lower(?)").bind(email).first();
+      if (exists) return NextResponse.json({ error: "An account with that email already exists." }, { status: 409 });
+
+      const userId = crypto.randomUUID();
+      const passwordData = await hashPassword(password);
+      await database.prepare(
+        "INSERT INTO users (id, email, name, password_hash, password_salt) VALUES (?, ?, ?, ?, ?)"
+      ).bind(userId, email, name, passwordData.hash, passwordData.salt).run();
+
+      await database.prepare(
+        "INSERT OR IGNORE INTO household_members (household_id, user_id, role) VALUES (?, ?, 'owner')"
+      ).bind(householdId, userId).run();
+
+      const token = await createSession(database, userId);
+      const response = NextResponse.json({ ok: true, account: { id: userId, email, name, role: "owner" } });
+      setSessionCookie(response, token);
+      return withHouseholdCookie(response, householdId, household.isNew);
+    }
+
+    if (body?.action === "login") {
+      const email = String(body.email || "").trim().toLowerCase();
+      const password = String(body.password || "");
+      const user = await database.prepare(
+        "SELECT id, email, name, password_hash, password_salt FROM users WHERE lower(email) = lower(?)"
+      ).bind(email).first();
+      if (!user) return NextResponse.json({ error: "Email or password is incorrect." }, { status: 401 });
+
+      const passwordData = await hashPassword(password, String(user.password_salt));
+      if (!safeEqual(passwordData.hash, String(user.password_hash))) {
+        return NextResponse.json({ error: "Email or password is incorrect." }, { status: 401 });
+      }
+
+      const membership = await database.prepare(
+        "SELECT household_id, role FROM household_members WHERE user_id = ? ORDER BY created_at LIMIT 1"
+      ).bind(user.id).first();
+      if (!membership) return NextResponse.json({ error: "No household is linked to this account." }, { status: 409 });
+
+      const token = await createSession(database, String(user.id));
+      const response = NextResponse.json({
+        ok: true,
+        account: { id: user.id, email: user.email, name: user.name, role: membership.role },
+        householdId: membership.household_id
+      });
+      setSessionCookie(response, token);
+      return withHouseholdCookie(response, String(membership.household_id), true);
+    }
+
+    if (body?.action === "logout") {
+      const token = readCookie(request, SESSION_COOKIE);
+      if (token) {
+        await database.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(await sha256(token)).run();
+      }
+      const response = NextResponse.json({ ok: true });
+      response.cookies.set(SESSION_COOKIE, "", { httpOnly: true, sameSite: "lax", secure: true, maxAge: 0 });
+      return response;
+    }
+
+    if (body?.action === "create-invite") {
+      const session = await getSession(database, request);
+      if (!session) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
+      const membership = await database.prepare(
+        "SELECT role FROM household_members WHERE household_id = ? AND user_id = ?"
+      ).bind(householdId, session.user_id).first();
+      if (!membership) return NextResponse.json({ error: "You are not a member of this household." }, { status: 403 });
+
+      const inviteToken = randomToken();
+      const inviteHash = await sha256(inviteToken);
+      const inviteId = crypto.randomUUID();
+      const email = String(body.email || "").trim().toLowerCase() || null;
+      await database.prepare(
+        `INSERT INTO household_invites (id, household_id, created_by, token_hash, email, expires_at)
+         VALUES (?, ?, ?, ?, ?, datetime('now', '+7 days'))`
+      ).bind(inviteId, householdId, session.user_id, inviteHash, email).run();
+      return NextResponse.json({ ok: true, inviteToken });
+    }
+
+    if (body?.action === "accept-invite") {
+      const session = await getSession(database, request);
+      if (!session) return NextResponse.json({ error: "Sign in or create an account before joining." }, { status: 401 });
+      const inviteToken = String(body.inviteToken || "");
+      const invite = await database.prepare(
+        `SELECT id, household_id, email FROM household_invites
+         WHERE token_hash = ? AND accepted_at IS NULL AND expires_at > CURRENT_TIMESTAMP`
+      ).bind(await sha256(inviteToken)).first();
+      if (!invite) return NextResponse.json({ error: "This invite is invalid or has expired." }, { status: 404 });
+      if (invite.email && String(invite.email).toLowerCase() !== String(session.email).toLowerCase()) {
+        return NextResponse.json({ error: "This invite was sent to a different email address." }, { status: 403 });
+      }
+
+      await database.prepare(
+        "INSERT OR IGNORE INTO household_members (household_id, user_id, role) VALUES (?, ?, 'member')"
+      ).bind(invite.household_id, session.user_id).run();
+      await database.prepare("UPDATE household_invites SET accepted_at = CURRENT_TIMESTAMP WHERE id = ?").bind(invite.id).run();
+
+      const response = NextResponse.json({ ok: true, householdId: invite.household_id });
+      return withHouseholdCookie(response, String(invite.household_id), true);
+    }
 
     if (body?.action === "start-household") {
       const name = String(body.name || "").trim();
