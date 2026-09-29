@@ -56,7 +56,33 @@ function readCookie(request: Request, name: string) {
 }
 
 async function resolveHousehold(database: any, request: Request) {
-  let id = readCookie(request, HOUSEHOLD_COOKIE);
+  const session = await getSession(database, request);
+  const requestedId = readCookie(request, HOUSEHOLD_COOKIE);
+
+  if (session) {
+    if (requestedId) {
+      const allowed = await database.prepare(
+        "SELECT household_id FROM household_members WHERE household_id = ? AND user_id = ?"
+      ).bind(requestedId, session.user_id).first();
+      if (allowed) return { id: requestedId, isNew: false };
+    }
+
+    const membership = await database.prepare(
+      "SELECT household_id FROM household_members WHERE user_id = ? ORDER BY created_at LIMIT 1"
+    ).bind(session.user_id).first();
+    if (membership?.household_id) return { id: String(membership.household_id), isNew: true };
+
+    const id = crypto.randomUUID();
+    await database.prepare(
+      "INSERT INTO households (id, name) VALUES (?, 'My household')"
+    ).bind(id).run();
+    await database.prepare(
+      "INSERT INTO household_members (household_id, user_id, role) VALUES (?, ?, 'owner')"
+    ).bind(id, session.user_id).run();
+    return { id, isNew: true };
+  }
+
+  let id = requestedId;
   let isNew = false;
   if (!id) {
     id = crypto.randomUUID();
