@@ -238,7 +238,12 @@ async function ensureSchema(database: any) {
       accepted_at TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`,
-    `CREATE INDEX IF NOT EXISTS idx_household_invites_token ON household_invites(token_hash)`
+    `CREATE INDEX IF NOT EXISTS idx_household_invites_token ON household_invites(token_hash)`,
+    `CREATE TABLE IF NOT EXISTS person_profiles (
+      person_id TEXT PRIMARY KEY REFERENCES people(id) ON DELETE CASCADE,
+      photo_data TEXT,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
   ];
 
   for (const sql of statements) {
@@ -287,7 +292,11 @@ function mealLooksSupper(meal: string) {
 
 async function getHouseholdData(database: any, householdId: string) {
   const peopleResult = await database.prepare(
-    "SELECT id, name, diner_type FROM people WHERE household_id = ? ORDER BY created_at, name"
+    `SELECT p.id, p.name, p.diner_type, pp.photo_data
+     FROM people p
+     LEFT JOIN person_profiles pp ON pp.person_id = p.id
+     WHERE p.household_id = ?
+     ORDER BY p.created_at, p.name`
   ).bind(householdId).all();
 
   const prefsResult = await database.prepare(
@@ -298,7 +307,7 @@ async function getHouseholdData(database: any, householdId: string) {
      ORDER BY fp.created_at, fp.meal_name`
   ).bind(householdId).all();
 
-  const peopleRows = (peopleResult.results ?? []) as Array<{ id: string; name: string; diner_type: string }>;
+  const peopleRows = (peopleResult.results ?? []) as Array<{ id: string; name: string; diner_type: string; photo_data?: string | null }>;
   const prefRows = (prefsResult.results ?? []) as Array<{ person_id: string; meal_name: string; preference: Preference }>;
 
   const people = peopleRows.map((person) => {
@@ -307,6 +316,7 @@ async function getHouseholdData(database: any, householdId: string) {
       id: person.id,
       name: person.name,
       dinerType: person.diner_type,
+      photoUrl: person.photo_data || null,
       likes: prefs.filter((p) => p.preference === "like").map((p) => p.meal_name),
       favourites: prefs.filter((p) => p.preference === "favourite").map((p) => p.meal_name),
       dislikes: prefs.filter((p) => p.preference === "dislike").map((p) => p.meal_name),
@@ -720,6 +730,31 @@ export async function POST(request: Request) {
       return withHouseholdCookie(NextResponse.json({ ok: true, mealName: alternative }), householdId, household.isNew);
     }
 
+    if (body?.action === "set-person-photo") {
+      const personId = String(body.personId || "");
+      const photoData = typeof body.photoData === "string" ? body.photoData : "";
+      if (!personId) return NextResponse.json({ error: "Person is required." }, { status: 400 });
+      if (photoData && (!photoData.startsWith("data:image/") || photoData.length > 500000)) {
+        return NextResponse.json({ error: "Please use a smaller image." }, { status: 400 });
+      }
+
+      const ownsPerson = await database.prepare(
+        "SELECT id FROM people WHERE id = ? AND household_id = ?"
+      ).bind(personId, householdId).first();
+      if (!ownsPerson) return NextResponse.json({ error: "Person not found." }, { status: 404 });
+
+      if (!photoData) {
+        await database.prepare("DELETE FROM person_profiles WHERE person_id = ?").bind(personId).run();
+      } else {
+        await database.prepare(
+          `INSERT INTO person_profiles (person_id, photo_data, updated_at)
+           VALUES (?, ?, CURRENT_TIMESTAMP)
+           ON CONFLICT(person_id) DO UPDATE SET photo_data = excluded.photo_data, updated_at = CURRENT_TIMESTAMP`
+        ).bind(personId, photoData).run();
+      }
+      return withHouseholdCookie(NextResponse.json({ ok: true, photoUrl: photoData || null }), householdId, household.isNew);
+    }
+
     if (body?.action === "delete-person") {
       const personId = String(body.personId || "");
       if (!personId) return NextResponse.json({ error: "Person is required." }, { status: 400 });
@@ -729,6 +764,7 @@ export async function POST(request: Request) {
       ).bind(personId, householdId).first();
       if (!ownsPerson) return NextResponse.json({ error: "Person not found." }, { status: 404 });
 
+      await database.prepare("DELETE FROM person_profiles WHERE person_id = ?").bind(personId).run();
       await database.prepare(
         "DELETE FROM people WHERE id = ? AND household_id = ?"
       ).bind(personId, householdId).run();
