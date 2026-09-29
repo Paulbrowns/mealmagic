@@ -483,12 +483,30 @@ export async function POST(request: Request) {
       const email = String(body.email || "").trim().toLowerCase();
       const name = String(body.name || "").trim();
       const password = String(body.password || "");
+      const inviteToken = String(body.inviteToken || "");
       if (!email || !name || password.length < 8) {
         return NextResponse.json({ error: "Name, valid email and a password of at least 8 characters are required." }, { status: 400 });
       }
 
       const exists = await database.prepare("SELECT id FROM users WHERE lower(email) = lower(?)").bind(email).first();
       if (exists) return NextResponse.json({ error: "An account with that email already exists." }, { status: 409 });
+
+      let targetHouseholdId = householdId;
+      let role = "owner";
+      let invite: any = null;
+
+      if (inviteToken) {
+        invite = await database.prepare(
+          `SELECT id, household_id, email FROM household_invites
+           WHERE token_hash = ? AND accepted_at IS NULL AND expires_at > CURRENT_TIMESTAMP`
+        ).bind(await sha256(inviteToken)).first();
+        if (!invite) return NextResponse.json({ error: "This invite is invalid or has expired." }, { status: 404 });
+        if (invite.email && String(invite.email).toLowerCase() !== email) {
+          return NextResponse.json({ error: "This invite was sent to a different email address." }, { status: 403 });
+        }
+        targetHouseholdId = String(invite.household_id);
+        role = "member";
+      }
 
       const userId = crypto.randomUUID();
       const passwordData = await hashPassword(password);
@@ -497,13 +515,17 @@ export async function POST(request: Request) {
       ).bind(userId, email, name, passwordData.hash, passwordData.salt).run();
 
       await database.prepare(
-        "INSERT OR IGNORE INTO household_members (household_id, user_id, role) VALUES (?, ?, 'owner')"
-      ).bind(householdId, userId).run();
+        "INSERT OR IGNORE INTO household_members (household_id, user_id, role) VALUES (?, ?, ?)"
+      ).bind(targetHouseholdId, userId, role).run();
+
+      if (invite) {
+        await database.prepare("UPDATE household_invites SET accepted_at = CURRENT_TIMESTAMP WHERE id = ?").bind(invite.id).run();
+      }
 
       const token = await createSession(database, userId);
-      const response = NextResponse.json({ ok: true, account: { id: userId, email, name, role: "owner" } });
+      const response = NextResponse.json({ ok: true, account: { id: userId, email, name, role }, householdId: targetHouseholdId });
       setSessionCookie(response, token);
-      return withHouseholdCookie(response, householdId, household.isNew);
+      return withHouseholdCookie(response, targetHouseholdId, true);
     }
 
     if (body?.action === "login") {
