@@ -1,5 +1,5 @@
-import FeedMeApp from "@/components/FeedMeApp";
+import FeedMeLanding from "@/components/FeedMeLanding";
 
 export default function Page() {
-  return <FeedMeApp />;
+  return <FeedMeLanding />;
 }
