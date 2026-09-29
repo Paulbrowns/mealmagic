@@ -116,7 +116,7 @@ export async function GET() {
 
     const peopleResult = await database.prepare(
       "SELECT id, name, diner_type FROM people WHERE household_id = ? ORDER BY created_at, name"
-    ).bind(HOUSEHOLD_ID).all<{ id: string; name: string; diner_type: string }>();
+    ).bind(HOUSEHOLD_ID).all();
 
     const prefsResult = await database.prepare(
       `SELECT fp.person_id, fp.meal_name, fp.preference
@@ -124,7 +124,7 @@ export async function GET() {
        JOIN people p ON p.id = fp.person_id
        WHERE p.household_id = ?
        ORDER BY fp.created_at, fp.meal_name`
-    ).bind(HOUSEHOLD_ID).all<{ person_id: string; meal_name: string; preference: Preference }>();
+    ).bind(HOUSEHOLD_ID).all();
 
     const people = (peopleResult.results ?? []).map((person) => {
       const prefs = (prefsResult.results ?? []).filter((p) => p.person_id === person.id);
