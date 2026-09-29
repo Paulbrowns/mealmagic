@@ -4,16 +4,19 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "opennextjs-cloudflare build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.57.4",
     "lucide-react": "^0.544.0",
-    "next": "15.5.3",
+    "next": "15.5.9",
     "openai": "^6.34.0",
     "react": "19.1.1",
     "react-dom": "19.1.1",
@@ -24,7 +27,9 @@
     "@types/react": "^19.1.11",
     "@types/react-dom": "^19.1.7",
     "eslint": "^9.34.0",
-    "eslint-config-next": "15.5.3",
-    "typescript": "^5.9.2"
+    "eslint-config-next": "15.5.9",
+    "typescript": "^5.9.2",
+    "@opennextjs/cloudflare": "latest",
+    "wrangler": "latest"
   }
 }
