@@ -1,5 +1,5 @@
-import MealPlannerApp from "@/components/MealPlannerApp";
+import FeedMeApp from "@/components/FeedMeApp";
 
 export default function Page() {
-  return <MealPlannerApp />;
+  return <FeedMeApp />;
 }
