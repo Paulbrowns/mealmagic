@@ -48,7 +48,6 @@ async function db() {
 
 async function ensureSchema(database: any) {
   await database.exec(`
-    PRAGMA foreign_keys = ON;
     CREATE TABLE IF NOT EXISTS households (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL DEFAULT 'My household',
